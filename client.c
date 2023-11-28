@@ -1,31 +1,81 @@
 #include "mytest.h"
 #include "project.h"
 
-void	do_comm_node()
+void	do_compute_node()
 {
+
+}
+
+// 8 * id - 8 + 1 <= value % 32 <= 8 * id;
+void	do_comm_node(int id, int **client2client[], int pip[2])
+{
+	char	file_name[10];
+	int		fd;
+	int		data[MB];
+	int		dump[MB];
+	int		ret[4][2];
+	int		i;
+	int		j;
+
+	sprintf(file_name, "p%d.dat", id);
+	fd = open(file_name, O_CREAT | O_WRONLY | O_TRUNC, 0644);
+	read(fd, data, MB);
+	close(pip[0]);
+	for (i = 0; i < 4; i++)
+		close(client2client[id][i][0]); // id -> i :  close(read)
+	for (i = 0; i < 4; i++)
+		close(client2client[i][id][1]); // i -> id : close(write)
+	int	dump_idx = -1;
+	for (i = 0; i < MB; i++)
+	{
+		int remain = data[i] % 32;
+		if (8 * id - 8 + 1 <= remain && remain <= 8 * id)
+			dump[++dump_idx] = data[i];
+		else if (1 <= remain && remain <= 8)
+			write(client2client[id][1], data[i], 4);
+		else if (9 <= remain && remain <= 16)
+			write(client2client[id][1], data[i], 4);
+		else if (17 <= remain && remain <= 24)
+			write(client2client[id][1], data[i], 4);
+		else if (25 <= remain && remain <= 32)
+			write(client2client[id][1], data[i], 4);
+		else
+		{
+			perror("[Error] Exit (1)");
+			exit(1);
+		}
+	}
+	while (1) // 자기 자신에 대한 예외처리 주의
+	{
+		for (i = 0; i < 4; i++)
+			ret[i][0] = read(client2client[i][id][0], ret[i][1], 4);
+		for (i = 0; i < 4; i++)
+		{
+			if (ret[i][0] != 0)
+				dump[++dump_idx] = ret[i][1];
+		}
+		if (ret[0][0] == 0 && ret[1][0] == 0 && ret[2][0] == 0 && ret[3][0] == 0)
+			break ;
+	}
+	for (i = 0; i < 4; i++)
+		close(client2client[id][i][1]); // id -> i :  close(write)
+	for (i = 0; i < 4; i++)
+		close(client2client[i][id][0]); // i -> id : close(read)
+
+	// 정렬
+
+
+	// 부모에게 넘기기
 	
 
 
+
+	close(pip[1]);
 }
 
-void	do_compute_node()
+void	do_io_node(int id, int pip[2])
 {
-	t_mytime	comp_time;
-
-	gettimeofday(&comp_time.stime, NULL);
-
-
-
-
-
-	gettimeofday(&comp_time.etime, NULL);
-	comp_time.time_result = comp_time.etime.tv_usec - comp_time.etime.tv_usec;
-	printf("**Program compute node\n");
-	printf("%ld %ld %ld\n", comp_time.etime.tv_usec, comp_time.stime.tv_usec, comp_time.time_result);
-}
-
-void	do_io_node()
-{
+	close(pip[1]);
 
 }
 
@@ -48,17 +98,31 @@ void	parent()
 	}
 }
 
-// client와 server로 구성된 child를 4개 생성한다.
-// (1) comm. client끼리 통신
-// (2) comp. client 내부에서 정렬
-// (3) I/O. server에서 write로 pipe로 전달받은 chunks를 저장한다.
-// 의문점: 시간을 어떻게 측정할 것인가?
-// (1) 임의의 child에서 위의 (1), (2), (3)만 시간을 측정하면 되는 것인가?
-// (2) 병렬적인 시간 측정은 (1) 통신에 걸린 시간, (2) 정렬에 걸린 시간, (3) 정렬에 걸린 시간을 각각 종합해서 계산해야 하는 것 아닌가?
-// 그렇다면 종합해서 시간 측정을 어떻게 하는가?
-// 예를 들어, (1) 과정을 위해 client fork() 수행 및 시간 측정 시작 -> 통신 -> parent에서 자원 회수 및 시간 측정 종료?
-// 이렇게 해야 하는건가? 그렇다면 각각의 process가 점유한 자원을 어떻게 관리하는가?
-void	parallel_operation(t_mytime *io_time, t_mytime *comm_time)
+void	Client2Server(int i, int **client2client[])
+{
+#ifdef TIMES
+	t_mytime	io_time;
+	t_mytime	comm_time;
+	t_mytime	rest_time;
+#endif
+	int	pid;
+	int	pip[2];
+
+	pipe(pip);
+	pid = fork();
+	if (pid == 0) // server
+		do_io_node(i, pip);
+	else // client
+		do_comm_node(i, client2client, pip);
+
+#ifdef TIMES
+	t_mytime	io_time;
+	t_mytime	comm_time;
+	t_mytime	rest_time;
+#endif
+}
+
+void	parallel_operation(void)
 {
 	int	client2client[4][4][2];
 	int	i;
@@ -80,7 +144,7 @@ void	parallel_operation(t_mytime *io_time, t_mytime *comm_time)
 			exit(1);
 		}
 		else if (pid == 0)
-			child(i, client2client, io_time, comm_time);
+			Client2Server(i, client2client);
 	}
 	parent();
 }
@@ -93,6 +157,7 @@ int client_oriented_io() {
 
 	t_mytime	io_time;
 	t_mytime	comm_time;
+	t_mytime	rest_time;
 #endif
 	/* Client_oriented_io. Measure io time, communication time, and time for the rest.
 	*/
@@ -100,21 +165,9 @@ int client_oriented_io() {
 #ifdef TIMES
 	gettimeofday(&stime, NULL);
 #endif
+	parallel_operation();
 
-#ifdef	TIMES
-	parallel_operation(&io_time, &comm_time);
-#endif
-	printf("**Program IO, communication and the rest\n");
-	printf("**Program IO\n");
-#ifdef	TIMES
-	io_time.time_result = io_time.etime.tv_usec - io_time.stime.v_usec;
-	printf("%ld %ld %ld\n", io_time.etime.tv_usec, io_time.stime.tv_usec, comm_time.time_result);
-#endif
-	printf("**Program communication\n");
-#ifdef	TIMES
-	comm_time.time_result = comm_time.etime.tv_usec - comm_time.stime.tv_usec;
-	printf("%ld %ld %ld\n", comm_time.etime.tv_usec, comm_time.stime.tv_usec, comm_time.time_result);
-#endif
+
 
 #ifdef TIMES
 	gettimeofday(&etime, NULL);

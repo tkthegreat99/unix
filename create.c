@@ -1,12 +1,25 @@
 #include "project.h"
 #include "mytest.h"
 
+void	debug_file(void)
+{
+	int	i;
+	char	cmd[1024];
+
+	i = 0;
+	for (i = 1; i <= 4; i++)
+	{
+		sprintf(cmd, "od -i p%d.dat | more", i);
+		system(cmd);
+	}
+}
+
 void    child_proc(int id)
 {
-	char	file_name[5];
-	char	cmd[1024];
-	int	fd;
-	int	data[MB + 1];
+	char	file_name[10];
+	int		fd;
+	int		data[MB];
+	int		ret;
 
 	sprintf(file_name, "p%d.dat", id);
 	fd = open(file_name, O_CREAT | O_WRONLY | O_TRUNC, 0644);
@@ -15,15 +28,19 @@ void    child_proc(int id)
 		perror("fd fail");
 		exit(1);
 	}
-	for (int i = 0; i <= MB; i++)
+	for (int i = 0; i < MB; i++)
 		data[i] = 4 * i + id;
-	if (write(fd, data, (MB + 1) * 4) < 0)
+	if ((ret = write(fd, data, MB * 4)) < 0)
 	{
 		perror("write fail");
 		exit(1);
 	}
-	sprintf(cmd, "od -i p%d.dat | more", id);
-	system(cmd);
+	if (ret != MB * 4)
+	{
+		printf("[Error] Error");
+		exit(1);
+	}
+	exit(0);
 }
 
 int create_source_data() {
@@ -58,8 +75,15 @@ int create_source_data() {
 			perror("pid error");
 			exit(1);
 		}
-		printf("[DEBUG] pid : %d, status: %d done\n", pid, status);
 		i++;
 	}
+	printf("[DEBUG] %d CREATE SROUCE DONE", i);
+	debug_file();
 	return (0);
 }
+
+// int	main(void)
+// {
+// 	create_source_data();
+// 	return (0);
+// }
