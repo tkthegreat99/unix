@@ -19,10 +19,11 @@ int main(void)
     {
         close(pip[0]);
         write(pip[1], "A", 1);
-        close(pip[1]);
+        // close(pip[1]);
         // write(pip[1], "A", 1);
         // write(pip[1], "A", 1);
-        // write(pip[1], "B", 1);
+        sleep(3);
+        write(pip[1], "B", 1);
         printf("done");
     }
     else

@@ -1,9 +1,36 @@
 #include "mytest.h"
 #include "project.h"
 
-void	do_compute_node()
+void	debug_result(void)
 {
+	int	i;
+	char	cmd[1024];
 
+	i = 0;
+	for (i = 1; i <= 4; i++)
+	{
+		sprintf(cmd, "I/O node #%d | more", i);
+		system(cmd);
+	}
+}
+
+// 오름차순 비교 함수 구현
+int ft_compare(const void *a, const void *b)
+{
+    int num1 = *(int *)a;
+    int num2 = *(int *)b;
+
+    if (num1 < num2)
+        return (-1);
+    if (num1 > num2)
+        return (1);
+    return (0);
+}
+
+void	do_compute_node(int *dump)
+{
+	// 정렬
+	qsort(dump, MB, sizeof(int), ft_compare);
 }
 
 // 8 * id - 8 + 1 <= value % 32 <= 8 * id;
@@ -13,13 +40,13 @@ void	do_comm_node(int id, int **client2client[], int pip[2])
 	int		fd;
 	int		data[MB];
 	int		dump[MB];
-	int		ret[4][2];
+	int		ret;
+	int		count;
 	int		i;
-	int		j;
 
 	sprintf(file_name, "p%d.dat", id);
 	fd = open(file_name, O_CREAT | O_WRONLY | O_TRUNC, 0644);
-	read(fd, data, MB);
+	read(fd, data, MB * sizeof(int));
 	close(pip[0]);
 	for (i = 0; i < 4; i++)
 		close(client2client[id][i][0]); // id -> i :  close(read)
@@ -32,59 +59,71 @@ void	do_comm_node(int id, int **client2client[], int pip[2])
 		if (8 * id - 8 + 1 <= remain && remain <= 8 * id)
 			dump[++dump_idx] = data[i];
 		else if (1 <= remain && remain <= 8)
-			write(client2client[id][1], data[i], 4);
+			write(client2client[id][1][1], &data[i], sizeof(int));
 		else if (9 <= remain && remain <= 16)
-			write(client2client[id][1], data[i], 4);
+			write(client2client[id][2][1], &data[i], sizeof(int));
 		else if (17 <= remain && remain <= 24)
-			write(client2client[id][1], data[i], 4);
+			write(client2client[id][3][1], &data[i], sizeof(int));
 		else if (25 <= remain && remain <= 32)
-			write(client2client[id][1], data[i], 4);
+			write(client2client[id][4][1], &data[i], sizeof(int));
 		else
 		{
 			perror("[Error] Exit (1)");
 			exit(1);
 		}
 	}
+	count = 0;
 	while (1) // 자기 자신에 대한 예외처리 주의
 	{
 		for (i = 0; i < 4; i++)
-			ret[i][0] = read(client2client[i][id][0], ret[i][1], 4);
-		for (i = 0; i < 4; i++)
 		{
-			if (ret[i][0] != 0)
-				dump[++dump_idx] = ret[i][1];
+			int	buffer;
+
+			ret = read(client2client[i][id][0], &buffer, sizeof(int));
+			if (ret != 0)
+				dump[++dump_idx] = buffer;
+			else
+				count++;
 		}
-		if (ret[0][0] == 0 && ret[1][0] == 0 && ret[2][0] == 0 && ret[3][0] == 0)
+		if (count == 4)
 			break ;
 	}
 	for (i = 0; i < 4; i++)
 		close(client2client[id][i][1]); // id -> i :  close(write)
 	for (i = 0; i < 4; i++)
 		close(client2client[i][id][0]); // i -> id : close(read)
-
-	// 정렬
-
-
+	do_compute_node(dump); // 정렬하기
 	// 부모에게 넘기기
-	
-
-
-
+	i = 0;
+	while (i < MB)
+	{
+		write(pip[1], &dump[i], sizeof(int) * 8);
+		i += 8;
+	}
 	close(pip[1]);
 }
 
 void	do_io_node(int id, int pip[2])
 {
-	close(pip[1]);
+	int		ret;
+	int		chunk[8];
+	char	file_name[15];
+	int		fd;
 
+	close(pip[1]);
+	sprintf(file_name, "I/O node #%d", id);
+	fd = open(file_name, O_CREAT | O_WRONLY | O_TRUNC, 0644);
+	while ((ret = read(pip[0], chunk, sizeof(int) * 8)) > 0)
+		write(fd, chunk, sizeof(int) * 8);
+	close(pip[0]);
+	close(fd);
 }
 
-void	parent()
+void	parent(char *str)
 {
 	int	pid;
 	int	status;
 	int	i;
-	int	j;
 
 	for (i = 0; i < 4; i++)
 	{
@@ -94,11 +133,11 @@ void	parent()
 			perror("pid error");
 			exit(1);
 		}
-		printf("[DEBUG] pid : %d, status: %d done\n", pid, status);
+		printf("[DEBUG] %s, pid : %d, status: %d done\n", str, pid, status);
 	}
 }
 
-void	Client2Server(int i, int **client2client[])
+void	Client2Server(int i, int ***client2client)
 {
 #ifdef TIMES
 	t_mytime	io_time;
@@ -111,10 +150,12 @@ void	Client2Server(int i, int **client2client[])
 	pipe(pip);
 	pid = fork();
 	if (pid == 0) // server
+	{
 		do_io_node(i, pip);
+		parent("Client2Server");
+	}
 	else // client
 		do_comm_node(i, client2client, pip);
-
 #ifdef TIMES
 	t_mytime	io_time;
 	t_mytime	comm_time;
@@ -146,7 +187,8 @@ void	parallel_operation(void)
 		else if (pid == 0)
 			Client2Server(i, client2client);
 	}
-	parent();
+	parent("parallel_operation");
+	debug_result();
 }
 
 int client_oriented_io() {
@@ -166,8 +208,6 @@ int client_oriented_io() {
 	gettimeofday(&stime, NULL);
 #endif
 	parallel_operation();
-
-
 
 #ifdef TIMES
 	gettimeofday(&etime, NULL);
