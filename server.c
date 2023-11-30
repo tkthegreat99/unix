@@ -20,5 +20,5 @@ int server_oriented_io() {
         time_result = etime.tv_usec - stime.tv_usec;
         printf("Server_oriented_io TIMES == %ld %ld %ld\n", etime.tv_usec, stime.tv_usec, time_result);
 #endif
-
+        return (1);
 }

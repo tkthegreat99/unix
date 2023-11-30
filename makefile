@@ -1,5 +1,5 @@
 
-SRCS = client.c create.c mytest.c server.c
+SRCS = client.c create.c server.c
 CC = cc
 # CFLAGS = -Wall -Wextra -Werror -DTIMES
 CFLAGS = -Wall -Wextra -Werror

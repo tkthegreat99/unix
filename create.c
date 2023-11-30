@@ -1,5 +1,5 @@
-#include "project.h"
-#include "mytest.h"
+#include"project.h"
+#include"mytest.h"
 
 void	debug_file(void)
 {
@@ -77,7 +77,6 @@ int create_source_data() {
 		}
 		i++;
 	}
-	printf("[DEBUG] %d CREATE SROUCE DONE", i);
 	debug_file();
 	return (0);
 }
