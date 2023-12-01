@@ -1,0 +1,9 @@
+{
+    "files.associations": {
+        "__locale": "c",
+        "locale": "c",
+        "chrono": "c",
+        "stdio.h": "c",
+        "unistd.h": "c"
+    }
+}

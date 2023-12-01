@@ -1,4 +1,5 @@
 #include "mytest.h"
+#include "project.h"
 
 int server_oriented_io() {
 
@@ -18,7 +19,7 @@ int server_oriented_io() {
 #ifdef TIMES
         gettimeofday(&etime, NULL);
         time_result = etime.tv_usec - stime.tv_usec;
-        printf("Server_oriented_io TIMES == %ld %ld %ld\n", etime.tv_usec, stime.tv_usec, time_result);
+        printf("Server_oriented_io TIMES == %d %d %d\n", etime.tv_usec, stime.tv_usec, time_result);
 #endif
         return (1);
 }

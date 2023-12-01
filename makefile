@@ -1,8 +1,8 @@
 
 SRCS = client.c create.c server.c
 CC = cc
-# CFLAGS = -Wall -Wextra -Werror -DTIMES
-CFLAGS = -Wall -Wextra -Werror
+# CFLAGS = -DTIMES
+CFLAGS = -Wall -Wextra -Werror -DTIMES
 RM = rm -f
 OBJS = ${SRCS:.c=.o}
 INCS = project.h

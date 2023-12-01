@@ -10,13 +10,18 @@ void	debug_result(void)
 
 	for (i = 1; i <= 4; i++)
 	{
-		sprintf(cmd, "od -i IOnode_#%d | more", i);
+		sprintf(cmd, "od -i IOnode/IOnode_#%d | more", i);
 		system(cmd);
 	}
 	for (i = 1; i <= 4; i++)
 	{
-		sprintf(cmd, "IOnode_#%d", i);
+		sprintf(cmd, "IOnode/IOnode_#%d", i);
 		fd = open(cmd, O_RDONLY);
+		if (fd < 0)
+		{
+			perror("fd error");
+			exit(1);
+		}
 		printf("%d result byte: %d, MB byte: %d\n", i, (int)read(fd, buffer, MB * sizeof(int)), (int)(MB * sizeof(int)));
 	}
 }
@@ -34,24 +39,31 @@ int ft_compare(const void *a, const void *b)
     return (0);
 }
 
+// rest_time;
 void	do_compute_node(int *dump)
 {
-	// 정렬
+#ifdef TIMES
+	int time_result;
+	struct timeval stime, etime;
+
+	gettimeofday(&stime, NULL);
+#endif
 	qsort(dump, MB, sizeof(int), ft_compare);
+#ifdef TIMES
+	gettimeofday(&etime, NULL);
+	time_result = (etime.tv_usec - stime.tv_usec);
+	writeTimeAdvLock(COMP, time_result);
+#endif
+
 }
 
-// 8 * id - 8 + 1 <= value % 32 <= 8 * id;
-void	do_comm_node(int id, int client2client[4][4][2], int pip[2])
+void	comm_init(int id, int client2client[4][4][2], int pip[2], int data[MB])
 {
-	char	file_name[10];
-	int		fd;
-	int		data[MB];
-	int		dump[MB];
-	int		ret;
-	int		i;
-	int		dump_idx;
+	char		file_name[1024];
+	int			fd;
+	int			i;
 
-	sprintf(file_name, "p%d.dat", id + 1);
+	sprintf(file_name, "data/p%d.dat", id + 1);
 	fd = open(file_name, O_RDONLY);
 	if (fd < 0)
 		exit(1);
@@ -61,14 +73,71 @@ void	do_comm_node(int id, int client2client[4][4][2], int pip[2])
 		close(client2client[id][i][0]); // id -> i :  close(read)
 	for (i = 0; i < 4; i++)
 		close(client2client[i][id][1]); // i -> id : close(write)
-	ret = 0;
-	dump_idx = -1;
+	// client2client O_NONBLOCK
 	for (i = 0; i < 4; i++)
 	{
 		if (i == id)
 			continue;
 		fcntl(client2client[i][id][0], F_SETFL, O_NONBLOCK);
 	}
+}
+
+void    send_server(int pip[2], int dump[MB])
+{
+	int	i;
+
+	i = 0;
+	while (i < MB)
+	{
+		write(pip[1], &dump[i], sizeof(int) * 8);
+		i += 8;
+	}
+}
+
+void	writeTimeAdvLock(int index, int time_result)
+{
+	struct flock	myLock;
+	int				fd;
+	int				buffer;
+
+	if (time_result < 0)
+		time_result += SEC;
+	fd = open("clientOrientedTime", O_RDWR, 0644);
+	myLock.l_type = F_WRLCK;
+	myLock.l_whence = SEEK_SET;
+	myLock.l_start = index * sizeof(int);
+	myLock.l_len = sizeof(int);
+	fcntl(fd, F_SETLKW, &myLock); // F_SETLKW로 쓰기 lock
+	lseek(fd, index * sizeof(int), SEEK_SET); // index로 위치 이동
+	read(fd, &buffer, sizeof(int)); // 읽기
+	time_result += buffer;
+	lseek(fd, index * sizeof(int), SEEK_SET);
+	write(fd, &time_result, sizeof(int)); // 쓰기
+	myLock.l_type = F_UNLCK; // F_SETLKW 해제
+	fcntl(fd, F_SETLKW, &myLock);
+	close(fd);
+}
+
+// comm_time
+void	do_comm_node(int id, int client2client[4][4][2], int pip[2])
+{
+	int			data[MB];
+	int			dump[MB];
+	int			ret;
+	int			i;
+	int			dump_idx;
+
+	comm_init(id, client2client, pip, data);
+	ret = 0;
+	dump_idx = -1;
+
+#ifdef TIMES
+	int time_result;
+	struct timeval stime, etime;
+
+	gettimeofday(&stime, NULL);
+#endif
+
 	for (i = 0; i < MB; i++)
 	{
 		int remain = data[i] % 32;
@@ -123,21 +192,23 @@ void	do_comm_node(int id, int client2client[4][4][2], int pip[2])
 		if (dump_idx == MB - 1)
 			break ;
 	}
+
+#ifdef TIMES
+	gettimeofday(&etime, NULL);
+	time_result = (etime.tv_usec - stime.tv_usec);
+	writeTimeAdvLock(COMM, time_result);
+#endif
+
+	do_compute_node(dump); // 정렬하기
+	send_server(pip, dump); // server에게 전달
 	for (i = 0; i < 4; i++)
 		close(client2client[id][i][1]); // id -> i :  close(write)
 	for (i = 0; i < 4; i++)
 		close(client2client[i][id][0]); // i -> id : close(read)
-	do_compute_node(dump); // 정렬하기
-	// 부모에게 넘기기
-	i = 0;
-	while (i < MB)
-	{
-		write(pip[1], &dump[i], sizeof(int) * 8);
-		i += 8;
-	}
 	close(pip[1]);
 }
 
+// io_time
 void	do_io_node(int id, int pip[2])
 {
 	int		ret;
@@ -146,7 +217,7 @@ void	do_io_node(int id, int pip[2])
 	int		fd;
 
 	close(pip[1]);
-	sprintf(file_name, "IOnode_#%d", id + 1);
+	sprintf(file_name, "IOnode/IOnode_#%d", id + 1);
 	printf("file_name : [%s]\n", file_name);
 	fd = open(file_name, O_CREAT | O_WRONLY | O_TRUNC, 0644);
 	if (fd < 0)
@@ -154,8 +225,19 @@ void	do_io_node(int id, int pip[2])
 		perror("I/O node CREATE FAIL");
 		exit(1);
 	}
+#ifdef TIMES
+	int time_result;
+	struct timeval stime, etime;
+
+	gettimeofday(&stime, NULL);
+#endif
 	while ((ret = read(pip[0], chunk, sizeof(int) * 8)) > 0)
 		write(fd, chunk, sizeof(int) * 8);
+#ifdef TIMES
+	gettimeofday(&etime, NULL);
+	time_result = (etime.tv_usec - stime.tv_usec);
+	writeTimeAdvLock(IO, time_result);
+#endif
 	close(pip[0]);
 	close(fd);
 }
@@ -182,11 +264,6 @@ void	parent(char *str)
 
 void	Client2Server(int i, int client2client[4][4][2])
 {
-#ifdef TIMES
-	t_mytime	io_time;
-	t_mytime	comm_time;
-	t_mytime	rest_time;
-#endif
 	int	pid;
 	int	pip[2];
 	int	status;
@@ -200,12 +277,7 @@ void	Client2Server(int i, int client2client[4][4][2])
 		do_io_node(i, pip);
 		wait(&status);
 		printf("[DEBUG] Client2Server, pid : %d, status: %d done\n", pid, status);
-	} 
-#ifdef TIMES
-	t_mytime	io_time;
-	t_mytime	comm_time;
-	t_mytime	rest_time;
-#endif
+	}
 }
 
 void	parallel_operation(void)
@@ -237,12 +309,8 @@ void	parallel_operation(void)
 int client_oriented_io() {
 
 #ifdef TIMES
-	struct timeval stime,etime;
-	int time_result;
-
-	t_mytime	io_time;
-	t_mytime	comm_time;
-	t_mytime	rest_time;
+	struct timeval stime, etime;
+	int		time_result;
 #endif
 	/* Client_oriented_io. Measure io time, communication time, and time for the rest.
 	*/
@@ -250,13 +318,48 @@ int client_oriented_io() {
 #ifdef TIMES
 	gettimeofday(&stime, NULL);
 #endif
+
+	int	fd;
+	int	ZERO;
+
+	unlink("clientOrientedTime"); // clientOrientedTime은 client_oriented_io가 실행될 때마다 초기화된다.
+	fd = open("clientOrientedTime", O_CREAT | O_WRONLY, 0644);
+	ZERO = 0;
+	write(fd, &ZERO, sizeof(int));
+	write(fd, &ZERO, sizeof(int));
+	write(fd, &ZERO, sizeof(int));
+	close(fd);
 	parallel_operation();
 
 #ifdef TIMES
 	gettimeofday(&etime, NULL);
 	time_result = etime.tv_usec - stime.tv_usec;
-	printf("Client_oriented_io TIMES == %ld %ld %ld\n", etime.tv_usec, stime.tv_usec, time_result);
+	if (time_result < 0)
+		time_result += SEC;
+	printf("Client_oriented_io TIMES == %ld %ld %ld\n", (long)etime.tv_usec, (long)stime.tv_usec, (long)time_result);
 #endif
+
+#ifdef TIMES
+	fd = open("clientOrientedTime", O_RDONLY);
+	int	clientTime[4];
+	int	i;
+
+	i = 0;
+	while ((read(fd, &clientTime[i], sizeof(int)) > 0))
+	{
+		if (i == COMM)
+			printf("communicate TIMES: %ld\n", (long)clientTime[i]);
+		else if (i == COMP)
+			printf("compute TIMES: %ld\n", (long)clientTime[i]);
+		else if (i == IO)
+			printf("IO TIMES: %ld\n", (long)clientTime[i]);
+		else
+			printf("??? %ld\n", (long)clientTime[i]);
+		i++;
+	}
+	close(fd);
+#endif
+
 	return (1);
 }
 

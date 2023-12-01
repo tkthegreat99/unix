@@ -9,19 +9,19 @@ void	debug_file(void)
 	i = 0;
 	for (i = 1; i <= 4; i++)
 	{
-		sprintf(cmd, "od -i p%d.dat | more", i);
+		sprintf(cmd, "od -i data/p%d.dat | more", i);
 		system(cmd);
 	}
 }
 
 void    child_proc(int id)
 {
-	char	file_name[10];
+	char	file_name[1024];
 	int		fd;
 	int		data[MB];
 	int		ret;
 
-	sprintf(file_name, "p%d.dat", id);
+	sprintf(file_name, "data/p%d.dat", id);
 	fd = open(file_name, O_CREAT | O_WRONLY | O_TRUNC, 0644);
 	if (fd == -1)
 	{
