@@ -111,6 +111,7 @@ void	writeTimeAdvLock(int index, int time_result)
 	lseek(fd, index * sizeof(int), SEEK_SET); // index로 위치 이동
 	read(fd, &buffer, sizeof(int)); // 읽기
 	time_result += buffer;
+	// printf("[DEBUG] (index, %d) = %d\n", index, time_result);
 	lseek(fd, index * sizeof(int), SEEK_SET);
 	write(fd, &time_result, sizeof(int)); // 쓰기
 	myLock.l_type = F_UNLCK; // F_SETLKW 해제
@@ -353,8 +354,6 @@ int client_oriented_io() {
 			printf("compute TIMES: %ld\n", (long)clientTime[i]);
 		else if (i == IO)
 			printf("IO TIMES: %ld\n", (long)clientTime[i]);
-		else
-			printf("??? %ld\n", (long)clientTime[i]);
 		i++;
 	}
 	close(fd);
